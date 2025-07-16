@@ -44,7 +44,7 @@ function setup() {
     createCanvas(GAME_WIDTH, GAME_HEIGHT);
     engine = Engine.create();
     world = engine.world;
-    engine.world.gravity.y = 2.2;
+    engine.world.gravity.y = 2.5;
     createPins();
     createSideBorders();
     createPrizeSlots();
@@ -64,7 +64,7 @@ function draw() {
 
 function mousePressed() {
     if (!musicStarted) {
-        bgMusic.setVolume(0.5);
+        bgMusic.setVolume(0.15);
         bgMusic.loop();
         musicStarted = true;
     }
