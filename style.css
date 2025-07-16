@@ -1,0 +1,20 @@
+/*
+    » Wagner Lima | www.wagnerlima.net | @wagnerlimaNET «
+    Professor de desenvolvimento web e design na escola iwtraining, especialista em mecanismos de 
+    buscas (SEO) e graduando em Sistemas e Mi­dias Digitais na Universidade Federal do Ceara (UFC).
+*/
+
+body {
+    margin: 0;
+    padding: 0;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    background-color: #1a1a1a;
+}
+
+canvas {
+    display: block;
+    /* border: 2px solid #fff; */
+}
