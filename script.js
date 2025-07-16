@@ -1,7 +1,3 @@
-// Wagner Lima | www.wagnerlima.net | @wagnerlimaNET
-// Professor de desenvolvimento web e design na escola iwtraining, especialista em mecanismos de 
-// buscas (SEO) e graduando em Sistemas e Mídias Digitais na Universidade Federal do Ceará (UFC).
-
 // Módulos da Matter.js
 const { Engine, World, Bodies, Body, Events, Vector } = Matter;
 
@@ -9,22 +5,23 @@ const { Engine, World, Bodies, Body, Events, Vector } = Matter;
 let engine;
 let world;
 let balls = [];
-let pins = [];
+let pins = []; // Agora armazenará objetos { body, glow }
 let sideBorders = [];
 
 // Variáveis de imagem
 let backgroundImg;
 let foregroundImg;
 
-// Variáveis de Sons e Efeitos
+// Variáveis de som e efeitos
 let confettiParticles = [];
 let bgMusic, pinSound, winSound, loseSound;
 let musicStarted = false;
+let isBallInPlay = false;
 
 // Variáveis de resultado
 let resultMessage = '';
 let messageTimer = 0;
-const MESSAGE_DURATION = 180; // 3 segundos
+const MESSAGE_DURATION = 180;
 
 // Constantes
 const GAME_WIDTH = 1080;
@@ -33,27 +30,21 @@ const BALL_RADIUS = 25;
 const PIN_RADIUS = 10;
 const prizeTexts = [ "TENTE\nNOVAMENTE", "VOCÊ\nGANHOU", "NÃO FOI\nDESSA VEZ", "TENTE\nNOVAMENTE", "VOCÊ\nGANHOU", "NÃO FOI\nDESSA VEZ", "VOCÊ\nGANHOU", "TENTE\nNOVAMENTE" ];
 
-// Pré-carregando as imagens e sons
 function preload() {
-    // Arquivos de imagens
-    backgroundImg = loadImage('imagens/cerbras2-bg.jpg');
-    foregroundImg = loadImage('imagens/base.png');
-
-    // Arquivos de som
     soundFormats('mp3', 'wav');
-    bgMusic = loadSound('sons/planes-crashing-213794.mp3');
-    pinSound = loadSound('sons/coin-drop-355977.mp3');
-    winSound = loadSound('sons/you-win-sequence-1-183948.mp3');
-    loseSound = loadSound('sons/wah-wah-sad-trombone-6347.mp3');
+    backgroundImg = loadImage('imagens/cerbras-bg.jpg');
+    foregroundImg = loadImage('imagens/tubos.png');
+    bgMusic = loadSound('sons/music.mp3');
+    pinSound = loadSound('sons/pin.mp3');
+    winSound = loadSound('sons/win.mp3');
+    loseSound = loadSound('sons/lose.mp3');
 }
 
 function setup() {
     createCanvas(GAME_WIDTH, GAME_HEIGHT);
     engine = Engine.create();
     world = engine.world;
-    // Velocidade da bola (gravidade)
     engine.world.gravity.y = 2.2;
-
     createPins();
     createSideBorders();
     createPrizeSlots();
@@ -67,113 +58,120 @@ function draw() {
     drawSideBorders();
     drawBalls();
     image(foregroundImg, 0, 0, width, height);
-    
-    // Confetes ganhador
     drawConfetti();
-
     displayResultMessage();
 }
 
 function mousePressed() {
-    // Iniciando música principal ao clicar em qualquer local da janela
     if (!musicStarted) {
+        bgMusic.setVolume(0.5);
         bgMusic.loop();
         musicStarted = true;
     }
-
-    if (messageTimer <= 0 && mouseX > 0 && mouseX < width && mouseY > 0 && mouseY < height) {
+    if (!isBallInPlay && mouseX > 0 && mouseX < width && mouseY > 0 && mouseY < height) {
         createBall();
     }
 }
 
-// Classe para partículas de confetes ***
-class ConfettiParticle {
-    constructor() {
-        this.pos = createVector(random(width), random(-50, 0));
-        this.vel = createVector(random(-3, 3), random(5, 10));
-        this.acc = createVector(0, 0.1);
-        this.size = random(10, 20);
-        this.color = color(random(255), random(255), random(255));
-        this.alpha = 255;
-    }
-
-    update() {
-        this.vel.add(this.acc);
-        this.pos.add(this.vel);
-        this.alpha -= 2;
-    }
-
-    isFinished() {
-        return this.alpha < 0;
-    }
-
-    display() {
-        noStroke();
-        fill(this.color.levels[0], this.color.levels[1], this.color.levels[2], this.alpha);
-        rect(this.pos.x, this.pos.y, this.size, this.size);
-    }
-}
-
-// Desenhando todos os confetes
-function drawConfetti() {
-    for (let i = confettiParticles.length - 1; i >= 0; i--) {
-        confettiParticles[i].update();
-        confettiParticles[i].display();
-        if (confettiParticles[i].isFinished()) {
-            confettiParticles.splice(i, 1);
+// MUDANÇA: A função de criar os pinos agora cria um objeto para cada pino
+function createPins() {
+    const rows = 12, cols = 9, spacingY = 112, spacingX = 100, startX = 90, startY = 320;
+    for (let j = 0; j < rows; j++) {
+        for (let i = 0; i < cols; i++) {
+            let x = startX + i * spacingX;
+            if (j % 2 == 1) x += spacingX / 2;
+            if (x > width - startX) continue;
+            const y = startY + j * spacingY;
+            const pinBody = Bodies.circle(x, y, PIN_RADIUS, {
+                isStatic: true,
+                restitution: 0.5,
+                friction: 0.5,
+                label: 'pin'
+            });
+            World.add(world, pinBody);
+            // Armazena o corpo do pino junto com seu estado de brilho
+            pins.push({ body: pinBody, glow: 0 });
         }
     }
 }
 
-// Colisão com efeito sonoro
+// MUDANÇA: A função de desenhar os pinos agora aplica o efeito de brilho
+function drawPins() {
+    noStroke();
+    const darkGray = color(120);
+    const lightGray = color(220);
+
+    for (const pin of pins) {
+        const pos = pin.body.position;
+
+        // Se o pino deve brilhar
+        if (pin.glow > 0) {
+            // A cor do brilho (um verde-claro neon)
+            drawingContext.shadowColor = color(173, 255, 47, pin.glow);
+            // A intensidade do brilho
+            drawingContext.shadowBlur = 20;
+            // Diminui a intensidade do brilho para o próximo quadro (efeito de fade-out)
+            pin.glow = max(0, pin.glow - 5);
+        }
+
+        // Desenha o pino com o gradiente normal
+        for (let i = PIN_RADIUS; i > 0; i--) {
+            const inter = map(i, 0, PIN_RADIUS, 0, 1);
+            const c = lerpColor(lightGray, darkGray, inter);
+            fill(c);
+            circle(pos.x, pos.y, i * 2);
+        }
+
+        // Limpa o efeito de brilho para que não afete outros elementos
+        drawingContext.shadowBlur = 0;
+    }
+}
+
+// MUDANÇA: O detector de colisão agora ativa o brilho do pino
 function setupCollisionListener() {
     Events.on(engine, 'collisionStart', (event) => {
         const pairs = event.pairs;
         for (let i = 0; i < pairs.length; i++) {
             const { bodyA, bodyB } = pairs[i];
+            let pinBody = null;
 
-            // Colisão da bola com o pino
-            if ((bodyA.label === 'ball' && bodyB.label === 'pin') || (bodyB.label === 'ball' && bodyA.label === 'pin')) {
-                // Som do pino com volume e velocidade de reprodução levemente aleatórios
+            if (bodyA.label === 'ball' && bodyB.label === 'pin') {
+                pinBody = bodyB;
+            } else if (bodyB.label === 'ball' && bodyA.label === 'pin') {
+                pinBody = bodyA;
+            }
+            
+            // Se ocorreu uma colisão entre bola e pino
+            if (pinBody) {
+                // Toca o som
                 pinSound.setVolume(0.5);
                 pinSound.rate(random(0.8, 1.2));
                 pinSound.play();
+                
+                // Encontra o pino correspondente no nosso array e ativa o brilho
+                for (const pin of pins) {
+                    if (pin.body.id === pinBody.id) {
+                        pin.glow = 255; // Define o brilho para intensidade máxima
+                        break;
+                    }
+                }
             }
 
-            // Colisão da bola com o prêmio
-            if (bodyA.label === 'ball' && bodyB.label.startsWith('prize-')) handlePrizeHit(bodyA, bodyB);
-            else if (bodyB.label === 'ball' && bodyA.label.startsWith('prize-')) handlePrizeHit(bodyB, bodyA);
+            // Colisão com prêmios (lógica inalterada)
+            if (bodyA.label === 'ball' && bodyB.label.startsWith('prize-')) {
+                handlePrizeHit(bodyA, bodyB);
+            } else if (bodyB.label === 'ball' && bodyA.label.startsWith('prize-')) {
+                handlePrizeHit(bodyB, bodyA);
+            }
         }
     });
 }
 
-// Prêmios, sons e confetes ***
-function handlePrizeHit(ballBody, prizeBody) {
-    if (messageTimer > 0) return;
 
-    const prizeIndex = parseInt(prizeBody.label.split('-')[1]);
-    resultMessage = prizeTexts[prizeIndex];
-    messageTimer = MESSAGE_DURATION;
+// ---- Restante do código (sem alterações) ----
 
-    // Toca o som e dispara os efeitos correspondentes
-    if (resultMessage === "VOCÊ\nGANHOU") {
-        winSound.play();
-        // Cria 100 partículas de confete
-        for (let i = 0; i < 100; i++) {
-            confettiParticles.push(new ConfettiParticle());
-        }
-    } else if (resultMessage === "NÃO FOI\nDESSA VEZ") {
-        loseSound.play();
-    }
-
-    setTimeout(() => {
-        World.remove(world, ballBody);
-        balls = balls.filter(b => b.body.id !== ballBody.id);
-    }, 100);
-}
-
-// --- Desenhando todos os demais objetos
 function createBall() {
+    isBallInPlay = true;
     const minX = 150, maxX = width - 150;
     const spawnX = random(minX, maxX);
     const ball = Bodies.circle(spawnX, 180, BALL_RADIUS, { restitution: 0.5, friction: 0.01, label: 'ball' });
@@ -181,21 +179,32 @@ function createBall() {
     balls.push({ body: ball });
 }
 
-function drawPins() {
-    noStroke();
-    const darkGray = color(120), lightGray = color(220);
-    for (const pin of pins) {
-        for (let i = PIN_RADIUS; i > 0; i--) {
-            const inter = map(i, 0, PIN_RADIUS, 0, 1), c = lerpColor(lightGray, darkGray, inter);
-            fill(c);
-            circle(pin.position.x, pin.position.y, i * 2);
+function drawBalls() {
+    for (let i = balls.length - 1; i >= 0; i--) {
+        const ball = balls[i];
+        fill(200, 200, 220); noStroke();
+        beginShape();
+        for (let j = 0; j < ball.body.vertices.length; j++) vertex(ball.body.vertices[j].x, ball.body.vertices[j].y);
+        endShape(CLOSE);
+        if (ball.body.position.y > height + 100) {
+            World.remove(world, ball.body);
+            balls.splice(i, 1);
+            isBallInPlay = false;
         }
     }
 }
 
+function createSideBorders() {
+    const borderOptions = { isStatic: true, label: 'border', restitution: 1.5 };
+    const triH = 110, triW = 40, startY = 270, numTri = 13;
+    let leftV = []; for (let i = 0; i < numTri; i++) { const y = startY + i * triH; leftV.push({ x: 0, y: y }); leftV.push({ x: triW, y: y + triH / 2 }); } leftV.push({ x: 0, y: startY + numTri * triH });
+    const leftB = Bodies.fromVertices(triW / 2 - 8, 995, [leftV], borderOptions); World.add(world, leftB); sideBorders.push(leftB);
+    let rightV = []; for (let i = 0; i < numTri; i++) { const y = startY + i * triH; rightV.push({ x: width, y: y }); rightV.push({ x: width - triW, y: y + triH / 2 }); } rightV.push({ x: width, y: startY + numTri * triH });
+    const rightB = Bodies.fromVertices(width - triW / 2 + 8, 995, [rightV], borderOptions); World.add(world, rightB); sideBorders.push(rightB);
+}
+
 function drawSideBorders() {
-    fill(34, 139, 34, 180);
-    noStroke();
+    fill(34, 139, 34, 180); noStroke();
     for (const border of sideBorders) {
         beginShape();
         for (const vert of border.vertices) vertex(vert.x, vert.y);
@@ -203,46 +212,21 @@ function drawSideBorders() {
     }
 }
 
-function drawBalls() {
-    for (let i = balls.length - 1; i >= 0; i--) {
-        const ball = balls[i];
-        fill(200, 200, 220);
-        noStroke();
-        beginShape();
-        for (let j = 0; j < ball.body.vertices.length; j++) vertex(ball.body.vertices[j].x, ball.body.vertices[j].y);
-        endShape(CLOSE);
-        if (ball.body.position.y > height + 100) {
-            World.remove(world, ball.body);
-            balls.splice(i, 1);
-        }
+function handlePrizeHit(ballBody, prizeBody) {
+    if (messageTimer > 0) return;
+    const prizeIndex = parseInt(prizeBody.label.split('-')[1]);
+    resultMessage = prizeTexts[prizeIndex];
+    messageTimer = MESSAGE_DURATION;
+    if (resultMessage === "VOCÊ\nGANHOU") {
+        winSound.play();
+        for (let i = 0; i < 100; i++) confettiParticles.push(new ConfettiParticle());
+    } else if (resultMessage === "NÃO FOI\nDESSA VEZ") {
+        loseSound.play();
     }
-}
-
-function createPins() {
-    const r = 12, c = 9, sY = 112, sX = 100, sX_ = 90, sY_ = 320;
-    for (let j = 0; j < r; j++) {
-        for (let i = 0; i < c; i++) {
-            let x = sX_ + i * sX; if (j % 2 == 1) x += sX / 2; if (x > width - sX_) continue;
-            const y = sY_ + j * sY;
-            const pin = Bodies.circle(x, y, PIN_RADIUS, { isStatic: true, restitution: 0.5, friction: 0.5, label: 'pin' });
-            World.add(world, pin); pins.push(pin);
-        }
-    }
-}
-
-function createSideBorders() {
-    const o = { isStatic: true, label: 'border' }, h = 110, w = 40, y = 270, n = 13;
-    let lV = []; for (let i = 0; i < n; i++) { lV.push({ x: 0, y: y + i * h }); lV.push({ x: w, y: y + i * h + h / 2 }); } lV.push({ x: 0, y: y + n * h });
-    const l = Bodies.fromVertices(w / 2, 995, [lV], o); World.add(world, l); sideBorders.push(l);
-    let rV = []; for (let i = 0; i < n; i++) { rV.push({ x: width, y: y + i * h }); rV.push({ x: width - w, y: y + i * h + h / 2 }); } rV.push({ x: width, y: y + n * h });
-    const r = Bodies.fromVertices(width - w / 2, 995, [rV], o); World.add(world, r); sideBorders.push(r);
-}
-
-function createPrizeSlots() {
-    const nS = 8, sW = width / nS, dH = 250, dY = height - dH / 2 - 40;
-    for (let i = 1; i < nS; i++) { const d = Bodies.rectangle(i * sW, dY, 15, dH, { isStatic: true, label: 'divider' }); World.add(world, d); }
-    const sY = height - 50;
-    for (let i = 0; i < nS; i++) { const s = Bodies.rectangle(sW / 2 + i * sW, sY, sW, 100, { isStatic: true, isSensor: true, label: `prize-${i}` }); World.add(world, s); }
+    setTimeout(() => {
+        World.remove(world, ballBody);
+        balls = balls.filter(b => b.body.id !== ballBody.id);
+    }, 100);
 }
 
 function displayResultMessage() {
@@ -250,6 +234,26 @@ function displayResultMessage() {
         fill(0, 0, 0, 180); rect(0, height / 2 - 150, width, 300);
         fill(255); textAlign(CENTER, CENTER); textSize(100); textStyle(BOLD);
         text(resultMessage, width / 2, height / 2);
-        messageTimer--; if (messageTimer <= 0) resultMessage = '';
+        messageTimer--;
+        if (messageTimer <= 0) {
+            resultMessage = '';
+            isBallInPlay = false;
+        }
     }
+}
+
+class ConfettiParticle {
+    constructor() { this.pos = createVector(random(width), random(-50, 0)); this.vel = createVector(random(-3, 3), random(5, 10)); this.acc = createVector(0, 0.1); this.size = random(10, 20); this.color = color(random(255), random(255), random(255)); this.alpha = 255; }
+    update() { this.vel.add(this.acc); this.pos.add(this.vel); this.alpha -= 2; }
+    isFinished() { return this.alpha < 0; }
+    display() { noStroke(); fill(this.color.levels[0], this.color.levels[1], this.color.levels[2], this.alpha); rect(this.pos.x, this.pos.y, this.size, this.size); }
+}
+
+function drawConfetti() { for (let i = confettiParticles.length - 1; i >= 0; i--) { confettiParticles[i].update(); confettiParticles[i].display(); if (confettiParticles[i].isFinished()) confettiParticles.splice(i, 1); } }
+
+function createPrizeSlots() {
+    const nS = 8, sW = width / nS, dH = 250, dY = height - dH / 2 - 40;
+    for (let i = 1; i < nS; i++) { const d = Bodies.rectangle(i * sW, dY, 15, dH, { isStatic: true, label: 'divider' }); World.add(world, d); }
+    const sY = height - 50;
+    for (let i = 0; i < nS; i++) { const s = Bodies.rectangle(sW / 2 + i * sW, sY, sW, 100, { isStatic: true, isSensor: true, label: `prize-${i}` }); World.add(world, s); }
 }
